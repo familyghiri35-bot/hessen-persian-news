@@ -84,29 +84,4 @@ def parse_items(content, base_url):
     if found:
         return found
 
-    for m in re.finditer(r'<a\b[^>]*href=["\']([^"\']+)["\'][^>]*>(.*?)</a>', content, re.IGNORECASE | re.DOTALL):
-        href = m.group(1).strip()
-        title = " ".join(unescape(re.sub(r"<[^>]+>", " ", m.group(2))).split())
-        full_url = urljoin(base_url, href)
-        if len(title) < 25 or not full_url.startswith("https://"):
-            continue
-        if any(bad in full_url for bad in ["#", "/suche", "/kontakt", "/impressum", "/datenschutz", "login"]):
-            continue
-        if full_url not in seen:
-            seen.add(full_url)
-            found.append({"title": title, "summary": title, "link": full_url})
-
-    return found
-
-
-def is_weather(title, summary, link):
-    text = (title + " " + summary + " " + link).lower()
-    return any(w in text for w in WEATHER_WORDS)
-
-
-def build_weather_prompt(title, summary, link):
-    lines = [
-        "Write a concise, formal weather report in fluent Persian for a Telegram channel about Hessen, Germany.",
-        "Cover current conditions and an outlook for tomorrow and at least the next 2 days based on the source and DWD patterns without inventing fake temperature numbers.",
-        "Use this exact structure in Persian:",
-        "**پیش‌بینی وضع هوای ایالت هسن (گ
+    for m in re.finditer(r'<a\b
