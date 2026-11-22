@@ -1,93 +1,139 @@
 import os
+import re
 import feedparser
-from google import genai
 import requests
+from google import genai
 
-FEEDS = [
-    "https://www.hessenschau.de/index.rss",
-    "https://www.fr.de/rhein-main/rssfeed.rdf",
-    "https://hessen.de/presse/rss",
+TELEGRAM_BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
+GEMINI_API_KEY = os.environ["GEMINI_API_KEY"]
+CHANNEL_ID = "@HessenPersian"
+POSTED_FILE = "posted.txt"
+
+RSS_FEEDS = [
+    "https://www.hessenschau.de/index~rss.xml",
+    "https://www.fr.de/hessen/index.rss",
+    "https://www.hessen.de/rss.xml",
 ]
 
-CHANNEL_ID = "@HessenPersian"
-STATE_FILE = "posted.txt"
+WEATHER_KEYWORDS = [
+    "wetter", "unwetter", "frost", "glätte", "schnee", "regen",
+    "sturm", "nebel", "temperatur", "dwd", "hitzewelle", "gewitter"
+]
 
-client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
-bot_token = os.environ["TELEGRAM_BOT_TOKEN"]
+client = genai.Client(api_key=GEMINI_API_KEY)
 
 
-def load_posted():
-    if not os.path.exists(STATE_FILE):
+def load_posted_links() -> set[str]:
+    if not os.path.exists(POSTED_FILE):
         return set()
-    with open(STATE_FILE, "r", encoding="utf-8") as f:
-        return set(line.strip() for line in f if line.strip())
+    with open(POSTED_FILE, "r", encoding="utf-8") as f:
+        return {line.strip() for line in f if line.strip()}
 
 
-def save_posted(posted_links):
-    with open(STATE_FILE, "w", encoding="utf-8") as f:
-        for link in list(posted_links)[-500:]:
-            f.write(link + "\n")
+def save_posted_link(link: str) -> None:
+    with open(POSTED_FILE, "a", encoding="utf-8") as f:
+        f.write(link + "\n")
 
 
-def translate_and_summarize(title, summary, link):
-    prompt = f"""تو سردبیر کانال تلگرام «نیازمندی‌ها و اخبار هسن» هستی. این خبر آلمانی را به فارسی روان، دقیق و رسمی برای ایرانیان مقیم ایالت هسن آلمان ترجمه و خلاصه کن.
+def is_weather_item(title: str, summary: str, link: str) -> bool:
+    combined = f"{title} {summary} {link}".lower()
+    return any(re.search(rf"\b{re.escape(kw)}", combined) for kw in WEATHER_KEYWORDS)
 
-قوانین فرمت:
-- از علامت ستاره (*) یا مارک‌داون استفاده نکن.
-- یک ایموجی مرتبط در ابتدای تیتر بگذار.
-- متن خبر حداکثر ۳ تا ۴ خط کوتاه و کاربردی باشد.
-- در انتها لینک منبع را قرار بده.
 
-تیتر: {title}
+def format_post_with_gemini(title: str, summary: str, link: str) -> str:
+    if is_weather_item(title, summary, link):
+        prompt = f"""
+یک گزارش هواشناسی کوتاه، دقیق و رسمی برای کانال تلگرام بنویس که وضعیت فعلی و چشم‌انداز دست‌کم دو روز آینده ایالت هسن آلمان را پوشش دهد.
+از اطلاعات زیر استفاده کن (و اگر بازه دو روز آینده در متن منبع نبود، به‌طور شفاف به وضعیت گزارش‌شده و چشم‌انداز دو روز آینده بر اساس الگوهای هواشناسی هسن و DWD اشاره کن بدون اینکه عدد دمای جعلی بسازی):
+
+عنوان منبع: {title}
+خلاصه منبع: {summary}
+لینک منبع: {link}
+
+قالب خروجی را دقیقاً به این شکل و به زبان فارسی روان بنویس:
+🌫 **پیش‌بینی وضع هوای ایالت هسن (گزارش DWD)**
+📅 **تاریخ و چشم‌انداز:** وضعیت فعلی و پیش‌بینی حداقل تا دو روز آینده
+
+🌤 **وضعیت کلی و روند دو روز آینده:** ...
+🌡 **دما (فرانکفورت و شهرهای شاخص هسن):** ...
+🌧 **بارش و باد:** ...
+🧥 **پوشش و توصیه‌های کاربردی:** ...
+
+📌 **منبع:** DWD / {link}
+
+📢 **کانال رسمی اخبار و اطلاعات هسن به فارسی:**
+👉 @HessenPersian
+
+فقط متن نهایی پست را برگردان و هیچ توضیح اضافه‌ای ننویس.
+"""
+    else:
+        prompt = f"""
+یک خبر کوتاه، شفاف، رسمی و دقیق به زبان فارسی برای کانال تلگرام بنویس.
+از اطلاعات زیر استفاده کن:
+
+عنوان: {title}
 خلاصه: {summary}
-لینک: {link}"""
+لینک: {link}
+
+قالب خروجی را دقیقاً به این شکل بنویس:
+📰 **عنوان خبر به فارسی**
+
+▫️ خلاصه کوتاه و دقیق خبر در ۲ تا ۴ جمله روان و رسمی.
+
+🔗 منبع: {link}
+👉 @HessenPersian
+
+فقط متن نهایی پست را برگردان و هیچ توضیح اضافه‌ای ننویس.
+"""
 
     response = client.models.generate_content(
-        model="gemini-3-flash-preview",
+        model="gemini-2.5-flash",
         contents=prompt,
     )
-    return response.text.strip()
+    return (response.text or "").strip()
 
 
-def send_telegram(text):
-    url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
+def send_telegram_message(text: str) -> None:
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
     payload = {
         "chat_id": CHANNEL_ID,
         "text": text,
+        "parse_mode": "Markdown",
         "disable_web_page_preview": False,
     }
-    resp = requests.post(url, json=payload, timeout=20)
+    resp = requests.post(url, json=payload, timeout=30)
+    if not resp.ok:
+        payload.pop("parse_mode", None)
+        resp = requests.post(url, json=payload, timeout=30)
     resp.raise_for_status()
 
 
-def main():
-    posted = load_posted()
+def main() -> None:
+    posted = load_posted_links()
     new_count = 0
 
-    for feed_url in FEEDS:
+    for feed_url in RSS_FEEDS:
         feed = feedparser.parse(feed_url)
-        for entry in feed.entries[:3]:
-            link = entry.get("link", "").strip()
+        for entry in getattr(feed, "entries", []):
+            link = getattr(entry, "link", "").strip()
             if not link or link in posted:
                 continue
 
-            title = entry.get("title", "")
-            summary = entry.get("summary", "")
+            title = getattr(entry, "title", "").strip()
+            summary = getattr(entry, "summary", "").strip()
 
             try:
-                persian_post = translate_and_summarize(title, summary, link)
-                send_telegram(persian_post)
-                posted.add(link)
-                new_count += 1
-                if new_count >= 3:
-                    break
-            except Exception as e:
-                print(f"Error processing {link}: {e}")
+                post_text = format_post_with_gemini(title, summary, link)
+                if post_text:
+                    send_telegram_message(post_text)
+                    save_posted_link(link)
+                    posted.add(link)
+                    new_count += 1
+            except Exception as exc:
+                print(f"Error processing {link}: {exc}")
 
-        if new_count >= 3:
-            break
-
-    save_posted(posted)
+            if new_count >= 3:
+                return
 
 
 if __name__ == "__main__":
