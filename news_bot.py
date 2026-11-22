@@ -1,10 +1,14 @@
 import json
 import os
 import re
+import socket
+import time
 from html import unescape
 from urllib.parse import urljoin
 from urllib.request import Request, urlopen
 from google import genai
+
+socket.setdefaulttimeout(12)
 
 TELEGRAM_BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
 GEMINI_API_KEY = os.environ["GEMINI_API_KEY"]
@@ -31,6 +35,10 @@ WEATHER_WORDS = [
 client = genai.Client(api_key=GEMINI_API_KEY)
 
 
+def log(msg):
+    print(msg, flush=True)
+
+
 def load_posted():
     if not os.path.exists(POSTED_FILE):
         return set()
@@ -49,7 +57,7 @@ def fetch_url_text(url):
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
     }
     req = Request(url, headers=headers)
-    with urlopen(req, timeout=20) as resp:
+    with urlopen(req, timeout=10) as resp:
         return resp.read().decode("utf-8", errors="ignore")
 
 
@@ -103,83 +111,4 @@ def build_prompt(title, summary, link, force_weather=False):
             "Use bold Persian headings for: پیش‌بینی وضع هوای ایالت هسن (DWD), "
             "وضعیت فعلی و چشم‌انداز دو روز آینده، دما (فرانکفورت و هسن)، بارش و باد، توصیه و پوشش.\n"
             "End with:\nمنبع: DWD / " + link + "\n@HessenPersian\n"
-            "Return only the final Persian text.\nTitle: " + title + "\nSummary: " + summary
-        )
-    return (
-        "Write a concise formal Persian Telegram news post with a bold headline on line 1, "
-        "then 2 to 4 formal Persian summary sentences starting with '- ', "
-        "then 'منبع: " + link + "' and '@HessenPersian'.\n"
-        "Return only the final Persian text.\nTitle: " + title + "\nSummary: " + summary
-    )
-
-
-def format_post(title, summary, link, force_weather=False):
-    prompt = build_prompt(title, summary, link, force_weather=force_weather)
-    resp = client.models.generate_content(model=GEMINI_MODEL, contents=prompt)
-    return (resp.text or "").strip()
-
-
-def send_to_telegram(text):
-    api_url = "https://api.telegram.org/bot" + TELEGRAM_BOT_TOKEN + "/sendMessage"
-    payload = {"chat_id": CHANNEL_ID, "text": text, "disable_web_page_preview": False}
-    body = json.dumps(payload).encode("utf-8")
-    req = Request(api_url, data=body, headers={"Content-Type": "application/json"}, method="POST")
-    with urlopen(req, timeout=30) as resp:
-        resp.read()
-
-
-def main():
-    posted = load_posted()
-    all_items = []
-    seen_links = set()
-    for src in SOURCE_URLS:
-        try:
-            items = parse_items(fetch_url_text(src), src)
-            print("Source:", src, "-> items:", len(items))
-            for it in items:
-                if it["link"] not in seen_links:
-                    seen_links.add(it["link"])
-                    all_items.append(it)
-        except Exception as exc:
-            print("Fetch failed:", src, "->", exc)
-
-    weather_sent = 0
-    for item in all_items:
-        link = item["link"]
-        if not link or link in posted or not is_weather(item["title"], item["summary"], link):
-            continue
-        try:
-            msg = format_post(item["title"], item["summary"], link, force_weather=True)
-            if msg:
-                send_to_telegram(msg)
-                save_posted(link)
-                posted.add(link)
-                weather_sent += 1
-                print("Posted weather:", link)
-                break
-        except Exception as exc:
-            print("Weather post error:", link, exc)
-
-    news_sent = 0
-    for item in all_items:
-        link = item["link"]
-        if not link or link in posted:
-            continue
-        try:
-            msg = format_post(item["title"], item["summary"], link, force_weather=False)
-            if msg:
-                send_to_telegram(msg)
-                save_posted(link)
-                posted.add(link)
-                news_sent += 1
-                print("Posted news:", link)
-        except Exception as exc:
-            print("News post error:", link, exc)
-        if news_sent >= 2:
-            break
-
-    print("Done. Weather sent:", weather_sent, "| News sent:", news_sent)
-
-
-if __name__ == "__main__":
-    main()
+            "
