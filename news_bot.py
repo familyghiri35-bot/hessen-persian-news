@@ -76,4 +76,67 @@ def format_post_with_gemini(title: str, summary: str, link: str) -> str:
             "از اطلاعات زیر استفاده کن:\n\n"
             f"عنوان: {title}\n"
             f"خلاصه: {summary}\n"
-            f"لینک: {link
+            f"لینک: {link}\n\n"
+            "قالب خروجی را دقیقاً به این شکل بنویس:\n"
+            "📰 **عنوان خبر به فارسی**\n\n"
+            "▫️ خلاصه کوتاه و دقیق خبر در ۲ تا ۴ جمله روان و رسمی.\n\n"
+            f"🔗 منبع: {link}\n"
+            "👉 @HessenPersian\n\n"
+            "فقط متن نهایی پست را برگردان و هیچ توضیح اضافه‌ای ننویس."
+        )
+
+    response = client.models.generate_content(
+        model="gemini-2.5-flash",
+        contents=prompt,
+    )
+    return (response.text or "").strip()
+
+
+def send_telegram_message(text: str) -> None:
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+    payload = {
+        "chat_id": CHANNEL_ID,
+        "text": text,
+        "parse_mode": "Markdown",
+        "disable_web_page_preview": False,
+    }
+    resp = requests.post(url, json=payload, timeout=30)
+    if not resp.ok:
+        payload.pop("parse_mode", None)
+        resp = requests.post(url, json=payload, timeout=30)
+    resp.raise_for_status()
+
+
+def main() -> None:
+    posted = load_posted_links()
+    new_count = 0
+
+    for feed_url in RSS_FEEDS:
+        feed = feedparser.parse(feed_url)
+        entries = getattr(feed, "entries", [])
+        print(f"Checking feed {feed_url} -> {len(entries)} items")
+
+        for entry in entries:
+            link = getattr(entry, "link", "").strip()
+            if not link or link in posted:
+                continue
+
+            title = getattr(entry, "title", "").strip()
+            summary = getattr(entry, "summary", "").strip()
+
+            try:
+                post_text = format_post_with_gemini(title, summary, link)
+                if post_text:
+                    send_telegram_message(post_text)
+                    save_posted_link(link)
+                    posted.add(link)
+                    new_count += 1
+                    print(f"Posted: {link}")
+            except Exception as exc:
+                print(f"Error processing {link}: {exc}")
+
+            if new_count >= 3:
+                print("Reached max new posts per run (3). Stopping.")
+                return
+
+    print(f"Done. Total new posts sent: {new_count
