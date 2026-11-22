@@ -23,19 +23,9 @@ SOURCE_URLS = [
 ]
 
 WEATHER_WORDS = [
-    "wetter",
-    "unwetter",
-    "frost",
-    "glaette",
-    "glätte",
-    "schnee",
-    "regen",
-    "sturm",
-    "nebel",
-    "temperatur",
-    "dwd",
-    "hitzewelle",
-    "gewitter",
+    "wetter", "unwetter", "frost", "glaette", "glätte",
+    "schnee", "regen", "sturm", "nebel", "temperatur",
+    "dwd", "hitzewelle", "gewitter",
 ]
 
 client = genai.Client(api_key=GEMINI_API_KEY)
@@ -45,8 +35,7 @@ def load_posted():
     if not os.path.exists(POSTED_FILE):
         return set()
     with open(POSTED_FILE, "r", encoding="utf-8") as f:
-        lines = f.read().splitlines()
-    return {x.strip() for x in lines if x.strip()}
+        return {x.strip() for x in f.read().splitlines() if x.strip()}
 
 
 def save_posted(link):
@@ -56,62 +45,47 @@ def save_posted(link):
 
 def fetch_url_text(url):
     headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/131.0.0.0 Safari/537.36",
+        "User-Agent": "Mozilla/5.0",
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        "Accept-Language": "de-DE,de;q=0.9,en;q=0.8",
     }
     req = Request(url, headers=headers)
     with urlopen(req, timeout=20) as resp:
-        raw = resp.read()
-    return raw.decode("utf-8", errors="ignore")
+        return resp.read().decode("utf-8", errors="ignore")
 
 
-def clean_html_text(raw_html):
-    no_tags = re.sub(r"<[^>]+>", " ", raw_html)
-    return " ".join(unescape(no_tags).split())
+def clean_text(raw_html):
+    return " ".join(unescape(re.sub(r"<[^>]+>", " ", raw_html)).split())
 
 
 def parse_items(content, base_url):
     found = []
     seen = set()
-
-    item_pat = re.compile(r"<item\b[^>]*>(.*?)</item>", re.IGNORECASE | re.DOTALL)
-    title_pat = re.compile(r"<title>(.*?)</title>", re.IGNORECASE | re.DOTALL)
-    link_pat = re.compile(r"<link>(.*?)</link>", re.IGNORECASE | re.DOTALL)
-
-    for m in item_pat.finditer(content):
+    for m in re.finditer(r"<item\b[^>]*>(.*?)</item>", content, re.IGNORECASE | re.DOTALL):
         block = m.group(1)
-        tm = title_pat.search(block)
-        lm = link_pat.search(block)
+        tm = re.search(r"<title>(.*?)</title>", block, re.IGNORECASE | re.DOTALL)
+        lm = re.search(r"<link>(.*?)</link>", block, re.IGNORECASE | re.DOTALL)
         if tm and lm:
-            title = clean_html_text(tm.group(1))
+            title = clean_text(tm.group(1))
             link = unescape(re.sub(r"<[^>]+>", "", lm.group(1))).strip()
             if title and link.startswith("http") and link not in seen:
                 seen.add(link)
                 found.append({"title": title, "summary": title, "link": link})
-
     if found:
         return found
-
-    anchor_pat = re.compile(r"<a\b[^>]*>(.*?)</a>", re.IGNORECASE | re.DOTALL)
-    href_pat = re.compile(r'href=["\']([^"\']+)["\']', re.IGNORECASE)
-
-    for m in anchor_pat.finditer(content):
+    for m in re.finditer(r"<a\b[^>]*>(.*?)</a>", content, re.IGNORECASE | re.DOTALL):
         tag_open = content[m.start():m.start() + 250]
-        hm = href_pat.search(tag_open)
+        hm = re.search(r'href=["\']([^"\']+)["\']', tag_open, re.IGNORECASE)
         if not hm:
             continue
-        href = hm.group(1).strip()
-        title = clean_html_text(m.group(1))
-        full_url = urljoin(base_url, href)
+        title = clean_text(m.group(1))
+        full_url = urljoin(base_url, hm.group(1).strip())
         if len(title) < 25 or not full_url.startswith("https://"):
             continue
-        if any(bad in full_url for bad in ["#", "/suche", "/kontakt", "/impressum", "/datenschutz", "login"]):
+        if any(b in full_url for b in ["#", "/suche", "/kontakt", "/impressum", "/datenschutz", "login"]):
             continue
         if full_url not in seen:
             seen.add(full_url)
             found.append({"title": title, "summary": title, "link": full_url})
-
     return found
 
 
@@ -120,39 +94,92 @@ def is_weather(title, summary, link):
     return any(w in text for w in WEATHER_WORDS)
 
 
-def weather_header():
-    h1 = "**\u067e\u06cc\u0634\u200c\u0628\u06cc\u0646\u06cc \u0648\u0636\u0639 \u0647\u0648\u0627\u06cc \u0627\u06cc\u0627\u0644\u062a \u0647\u0633\u0646 (DWD)**"
-    h2 = "**\u0648\u0636\u0639\u06cc\u062a \u0641\u0639\u0644\u06cc\u060c \u0641\u0631\u062f\u0627 \u0648 \u0686\u0634\u0645\u200c\u0627\u0646\u062f\u0627\u0632 \u062f\u0648 \u0631\u0648\u0632 \u0622\u06cc\u0646\u062f\u0647:** ..."
-    h3 = "**\u062f\u0645\u0627 (\u0641\u0631\u0627\u0646\u06a9\u0641\u0648\u0631\u062a \u0648 \u0647\u0633\u0646):** ..."
-    h4 = "**\u0628\u0627\u0631\u0634 \u0648 \u0628\u0627\u062f:** ..."
-    h5 = "**\u062a\u0648\u0635\u06cc\u0647 \u0648 \u067e\u0648\u0634\u0634:** ..."
-    return "\n".join([h1, h2, h3, h4, h5])
-
-
-def build_weather_prompt(title, summary, link):
-    tpl = weather_header()
-    footer = "\n**\u0645\u0646\u0628\u0639:** DWD / " + link + "\n@HessenPersian"
-    msg = "Write a concise formal Persian weather forecast for Hessen, Germany, covering current status, tomorrow, and the next 2 days based on the source and DWD patterns without inventing fake temperatures.\n"
-    msg = msg + "Replace '...' in this template and keep the footer:\n" + tpl + footer + "\n"
-    msg = msg + "Return only the final Persian post.\nTitle: " + title + "\nSummary: " + summary
-    return msg
-
-
-def build_news_prompt(title, summary, link):
-    src_line = "\u0645\u0646\u0628\u0639: " + link
-    msg = "Write a concise, formal Persian Telegram news post with a bold headline on line 1, followed by 2 to 4 formal Persian summary sentences starting with '- ', then '" + src_line + "' and '@HessenPersian'.\n"
-    msg = msg + "Return only the final Persian post.\nTitle: " + title + "\nSummary: " + summary
-    return msg
+def build_prompt(title, summary, link, force_weather=False):
+    if force_weather or is_weather(title, summary, link):
+        return (
+            "Write a concise formal Persian weather forecast for Hessen, Germany "
+            "covering current conditions, tomorrow, and the next 2 days based on the source and DWD patterns "
+            "without inventing fake temperatures.\n"
+            "Use bold Persian headings for: پیش‌بینی وضع هوای ایالت هسن (DWD), "
+            "وضعیت فعلی و چشم‌انداز دو روز آینده، دما (فرانکفورت و هسن)، بارش و باد، توصیه و پوشش.\n"
+            "End with:\nمنبع: DWD / " + link + "\n@HessenPersian\n"
+            "Return only the final Persian text.\nTitle: " + title + "\nSummary: " + summary
+        )
+    return (
+        "Write a concise formal Persian Telegram news post with a bold headline on line 1, "
+        "then 2 to 4 formal Persian summary sentences starting with '- ', "
+        "then 'منبع: " + link + "' and '@HessenPersian'.\n"
+        "Return only the final Persian text.\nTitle: " + title + "\nSummary: " + summary
+    )
 
 
 def format_post(title, summary, link, force_weather=False):
-    if force_weather or is_weather(title, summary, link):
-        prompt = build_weather_prompt(title, summary, link)
-    else:
-        prompt = build_news_prompt(title, summary, link)
-
+    prompt = build_prompt(title, summary, link, force_weather=force_weather)
     resp = client.models.generate_content(model=GEMINI_MODEL, contents=prompt)
     return (resp.text or "").strip()
 
 
 def send_to_telegram(text):
+    api_url = "https://api.telegram.org/bot" + TELEGRAM_BOT_TOKEN + "/sendMessage"
+    payload = {"chat_id": CHANNEL_ID, "text": text, "disable_web_page_preview": False}
+    body = json.dumps(payload).encode("utf-8")
+    req = Request(api_url, data=body, headers={"Content-Type": "application/json"}, method="POST")
+    with urlopen(req, timeout=30) as resp:
+        resp.read()
+
+
+def main():
+    posted = load_posted()
+    all_items = []
+    seen_links = set()
+    for src in SOURCE_URLS:
+        try:
+            items = parse_items(fetch_url_text(src), src)
+            print("Source:", src, "-> items:", len(items))
+            for it in items:
+                if it["link"] not in seen_links:
+                    seen_links.add(it["link"])
+                    all_items.append(it)
+        except Exception as exc:
+            print("Fetch failed:", src, "->", exc)
+
+    weather_sent = 0
+    for item in all_items:
+        link = item["link"]
+        if not link or link in posted or not is_weather(item["title"], item["summary"], link):
+            continue
+        try:
+            msg = format_post(item["title"], item["summary"], link, force_weather=True)
+            if msg:
+                send_to_telegram(msg)
+                save_posted(link)
+                posted.add(link)
+                weather_sent += 1
+                print("Posted weather:", link)
+                break
+        except Exception as exc:
+            print("Weather post error:", link, exc)
+
+    news_sent = 0
+    for item in all_items:
+        link = item["link"]
+        if not link or link in posted:
+            continue
+        try:
+            msg = format_post(item["title"], item["summary"], link, force_weather=False)
+            if msg:
+                send_to_telegram(msg)
+                save_posted(link)
+                posted.add(link)
+                news_sent += 1
+                print("Posted news:", link)
+        except Exception as exc:
+            print("News post error:", link, exc)
+        if news_sent >= 2:
+            break
+
+    print("Done. Weather sent:", weather_sent, "| News sent:", news_sent)
+
+
+if __name__ == "__main__":
+    main()
