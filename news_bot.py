@@ -15,6 +15,16 @@ RSS_FEEDS = [
     "https://www.hessen.de/rss.xml",
 ]
 
+HTTP_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/131.0.0.0 Safari/537.36"
+    ),
+    "Accept": "application/rss+xml, application/xml, text/xml, */*;q=0.8",
+    "Accept-Language": "de-DE,de;q=0.9,en;q=0.8",
+}
+
 WEATHER_KEYWORDS = [
     "wetter", "unwetter", "frost", "glätte", "schnee", "regen",
     "sturm", "nebel", "temperatur", "dwd", "hitzewelle", "gewitter",
@@ -97,14 +107,26 @@ def send_telegram_message(text):
     resp.raise_for_status()
 
 
+def fetch_feed_entries(feed_url):
+    try:
+        resp = requests.get(feed_url, headers=HTTP_HEADERS, timeout=20)
+        print("Fetching:", feed_url, "-> HTTP", resp.status_code)
+        resp.raise_for_status()
+        parsed = feedparser.parse(resp.content)
+        entries = getattr(parsed, "entries", [])
+        print("Parsed entries for", feed_url, "->", len(entries))
+        return entries
+    except Exception as exc:
+        print("Failed fetching feed:", feed_url, "-> Error:", exc)
+        return []
+
+
 def main():
     posted = load_posted_links()
     new_count = 0
 
     for feed_url in RSS_FEEDS:
-        feed = feedparser.parse(feed_url)
-        entries = getattr(feed, "entries", [])
-        print("Checking feed:", feed_url, "-> items:", len(entries))
+        entries = fetch_feed_entries(feed_url)
 
         for entry in entries:
             link = getattr(entry, "link", "").strip()
