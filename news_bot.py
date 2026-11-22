@@ -105,9 +105,5 @@ def is_weather(title, summary, link):
 
 def build_prompt(title, summary, link, force_weather=False):
     if force_weather or is_weather(title, summary, link):
-        p1 = "Write a concise formal Persian weather forecast for Hessen, Germany covering current conditions, tomorrow, and the next 2 days based on the source and DWD patterns without inventing fake temperatures." + NL
-        p2 = "Use bold Persian headings for: پیش‌بینی وضع هوای ایالت هسن (DWD), وضعیت فعلی و چشم‌انداز دو روز آینده، دما (فرانکفورت و هسن)، بارش و باد، توصیه و پوشش." + NL
-        p3 = "End with:" + NL + "منبع: DWD / " + link + NL + "@HessenPersian" + NL + "Return only the final Persian text." + NL
-        return p1 + p2 + p3 + "Title: " + title + NL + "Summary: " + summary
-    p1 = "Write a concise formal Persian Telegram news post with a bold headline on line 1, then 2 to 4 formal Persian summary sentences starting with '- ', then 'منبع: " + link + "' and '@HessenPersian'." + NL
-    return p1 + "Return only the final Persian text." + NL + "Title: " + title + NL + "Summary
+        p1 = "Write a concise formal Persian weather forecast for Hessen, Germany "
+        p2 = "covering current conditions, tomorrow, and the next 2 days based on
