@@ -66,16 +66,25 @@ def fetch_url_text(url):
     return raw.decode("utf-8", errors="ignore")
 
 
+def clean_html_text(raw_html):
+    no_tags = re.sub(r"<[^>]+>", " ", raw_html)
+    return " ".join(unescape(no_tags).split())
+
+
 def parse_items(content, base_url):
     found = []
     seen = set()
 
-    for m in re.finditer(r"<item\b[^>]*>(.*?)</item>", content, re.IGNORECASE | re.DOTALL):
+    item_pat = re.compile(r"<item\b[^>]*>(.*?)</item>", re.IGNORECASE | re.DOTALL)
+    title_pat = re.compile(r"<title>(.*?)</title>", re.IGNORECASE | re.DOTALL)
+    link_pat = re.compile(r"<link>(.*?)</link>", re.IGNORECASE | re.DOTALL)
+
+    for m in item_pat.finditer(content):
         block = m.group(1)
-        tm = re.search(r"<title>(.*?)</title>", block, re.IGNORECASE | re.DOTALL)
-        lm = re.search(r"<link>(.*?)</link>", block, re.IGNORECASE | re.DOTALL)
+        tm = title_pat.search(block)
+        lm = link_pat.search(block)
         if tm and lm:
-            title = " ".join(unescape(re.sub(r"<[^>]+>", " ", tm.group(1))).split())
+            title = clean_html_text(tm.group(1))
             link = unescape(re.sub(r"<[^>]+>", "", lm.group(1))).strip()
             if title and link.startswith("http") and link not in seen:
                 seen.add(link)
@@ -84,4 +93,27 @@ def parse_items(content, base_url):
     if found:
         return found
 
-    for m in re.finditer(r'<a\b
+    anchor_pat = re.compile(r"<a\b[^>]*>(.*?)</a>", re.IGNORECASE | re.DOTALL)
+    href_pat = re.compile(r'href=["\']([^"\']+)["\']', re.IGNORECASE)
+
+    for m in anchor_pat.finditer(content):
+        tag_open = content[m.start():m.start() + 250]
+        hm = href_pat.search(tag_open)
+        if not hm:
+            continue
+        href = hm.group(1).strip()
+        title = clean_html_text(m.group(1))
+        full_url = urljoin(base_url, href)
+        if len(title) < 25 or not full_url.startswith("https://"):
+            continue
+        if any(bad in full_url for bad in ["#", "/suche", "/kontakt", "/impressum", "/datenschutz", "login"]):
+            continue
+        if full_url not in seen:
+            seen.add(full_url)
+            found.append({"title": title, "summary": title, "link": full_url})
+
+    return found
+
+
+def is_weather(title, summary, link):
+    text = (
