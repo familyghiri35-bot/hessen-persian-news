@@ -56,35 +56,4 @@ def load_posted_links():
     if not os.path.exists(POSTED_FILE):
         return set()
     with open(POSTED_FILE, "r", encoding="utf-8") as f:
-        return set(line.strip() for line in f if line.strip())
-
-
-def save_posted_link(link):
-    with open(POSTED_FILE, "a", encoding="utf-8") as f:
-        f.write(link + "\n")
-
-
-def is_weather_item(title, summary, link):
-    combined = (title + " " + summary + " " + link).lower()
-    return any(re.search(r"\b" + re.escape(kw), combined) for kw in WEATHER_KEYWORDS)
-
-
-def build_weather_prompt(title, summary, link):
-    lines = [
-        "یک گزارش هواشناسی کوتاه، دقیق و رسمی برای کانال تلگرام بنویس که وضعیت فعلی و چشم‌انداز دست‌کم دو روز آینده ایالت هسن آلمان را پوشش دهد.",
-        "از اطلاعات زیر استفاده کن و اگر بازه دو روز آینده در متن منبع نبود، به‌طور شفاف به وضعیت گزارش‌شده و چشم‌انداز دو روز آینده بر اساس الگوهای هواشناسی هسن و DWD اشاره کن بدون ساختن عدد دمای جعلی:",
-        "",
-        "عنوان منبع: " + title,
-        "خلاصه منبع: " + summary,
-        "لینک منبع: " + link,
-        "",
-        "قالب خروجی را دقیقاً به این شکل و به زبان فارسی روان بنویس:",
-        "**پیش‌بینی وضع هوای ایالت هسن (گزارش DWD)**",
-        "**تاریخ و چشم‌انداز:** وضعیت فعلی و پیش‌بینی حداقل تا دو روز آینده",
-        "",
-        "**وضعیت کلی و روند دو روز آینده:** ...",
-        "**دما (فرانکفورت و شهرهای شاخص هسن):** ...",
-        "**بارش و باد:** ...",
-        "**پوشش و توصیه‌های کاربردی:** ...",
-        "",
-        "**منبع:** DWD / " + link,
+        return set(line.strip() for line in f
