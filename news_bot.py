@@ -35,21 +35,22 @@ WEATHER_WORDS = [
     "dwd",
     "hitzewelle",
     "gewitter",
+    "morgen",
+    "ausblick",
 ]
 
 WEATHER_TEMPLATE_B64 = (
-    "KGFsYmVydF0gR2VuZXJhdGUgYSBjb25jaXNlLCBmb3JtYWwgd2VhdGhlciByZXBvcnQgaW4g"
-    "Zmx1ZW50IFBlcnNpYW4gZm9yIGEgVGVsZWdyYW0gY2hhbm5lbCBhYm91dCBIZXNzZW4sIEdl"
-    "cm1hbnksIGNvdmVyaW5nIGN1cnJlbnQgY29uZGl0aW9ucyBhbmQgYW4gb3V0bG9vayBmb3Ig"
-    "YXQgbGVhc3QgdGhlIG5leHQgMiBkYXlzIGJhc2VkIG9uIHRoZSBzb3VyY2UgYW5kIERXRCBw"
-    "YXR0ZXJucyB3aXRob3V0IGludmVudGluZyBmYWtlIG51bWJlcnMuClVzZSB0aGlzIGV4YWN0"
-    "IFBlcnNpYW4gc3RydWN0dXJlOgoqKvZvmt7bsa/YrNuM2Ygg2YjYstmZ2Ycg2YfZiNin24wg"
-    "2KfbjNin2YTYqiDgqK3Ys9mGINiq2YHaqdmI2KogKERXRCkgKioKKip0YXJpxYkg2Ygg2Yra"
-    "tNmF2KfboczYp9ixOioqIC4uLgoqKvZi2YbaudmK2Kog2qnZhNuEINmIINmB2YjZhtivINiv"
-    "hiBy2YraqiDYotmI2K7Zh9ivOioqIC4uLgoqKvS92K/YpyAo2YHYsdin2YbZqdix2YjYsdiq"
-    "INmIINi02YfYsdmH2KfYtSDYtNiu2LXYsiDgqK3Ys9mGKToqKiAuLi4KKirYqNin2LHYtNin"
-    "INmIINio2KfYrToqKiAuLi4KKirZvtmI2LTYtSDZiCDYqtix2YTYsdmH2KfYtSDaqdix2YXY"
-    "rNiv24w6KiogLi4uCioq2YXYrNi5OiogRFdEIC8g"
+    "R2VuZXJhdGUgYSBjb25jaXNlLCBmb3JtYWwgd2VhdGhlciByZXBvcnQgaW4gZmx1ZW50IFBl"
+    "cnNpYW4gZm9yIGEgVGVsZWdyYW0gY2hhbm5lbCBhYm91dCBIZXNzZW4sIEdlcm1hbnksIGZv"
+    "Y3VzaW5nIG9uIHRvbW9ycm93IGFuZCB0aGUgbmV4dCAyIGRheXMgb3V0bG9vayBiYXNlZCBv"
+    "biB0aGUgc291cmNlIGFuZCBEV0QgcGF0dGVybnMgd2l0aG91dCBpbnZlbnRpbmcgZmFrZSBu"
+    "dW1iZXJzLgpVc2UgdGhpcyBleGFjdCBQZXJzaWFuIHN0cnVjdHVyZToKKirZvmt7bsa/YrNu"
+    "M2Ygg2YjYstmZ2Ycg2YfZiNin24wg2KfbjNin2YTYqiDgqK3Ys9mGINiq2YHaqdmI2KogKERX"
+    "RCkgKioKKip0YXJpxYkg2Ygg2YratNmF2KfboczYp9ixOioqIC4uLgoqKvZi2YbaudmK2Kog"
+    "2qnZhNuEINmIINmB2YjZhtivINivhiBy2YraqiDYotmI2K7Zh9ivOioqIC4uLgoqKvS92K/Y"
+    "pyAo2YHYsdin2YbZqdix2YjYsdiqINmIINi02YfYsdmH2KfYtSDYtNiu2LXYsiDgqK3Ys9mG"
+    "KToqKiAuLi4KKirYqNin2LHYtNinINmIINio2KfYrToqKiAuLi4KKirZvtmI2LTYtSDZiCDY"
+    "qtix2YTYsdmH2KfYtSDaqdix2YXYrNiv24w6KiogLi4uCioq2YXYrNi5OiogRFdEIC8g"
 )
 
 NEWS_TEMPLATE_B64 = (
@@ -126,18 +127,18 @@ def parse_items(content, base_url):
 
 def is_weather(title, summary, link):
     text = (title + " " + summary + " " + link).lower()
-    return any(w in text for w in WEATHER_WORDS)
+    return any(w in text for w in ["wetter", "unwetter", "frost", "glaette", "glätte", "schnee", "regen", "sturm", "nebel", "temperatur", "dwd", "hitzewelle", "gewitter"])
 
 
-def build_prompt(title, summary, link):
+def build_prompt(title, summary, link, force_weather=False):
     footer = "\nمنبع: " + link + "\n@HessenPersian\nReturn only the final post text with no extra commentary.\nTitle: " + title + "\nSummary: " + summary
-    if is_weather(title, summary, link):
+    if force_weather or is_weather(title, summary, link):
         return b64_decode(WEATHER_TEMPLATE_B64) + link + "\n**کانال رسمی اخبار و اطلاعات هسن به فارسی:**\n@HessenPersian\nReturn only the final post text with no extra commentary.\nTitle: " + title + "\nSummary: " + summary
     return b64_decode(NEWS_TEMPLATE_B64) + footer
 
 
-def format_post(title, summary, link):
-    prompt = build_prompt(title, summary, link)
+def format_post(title, summary, link, force_weather=False):
+    prompt = build_prompt(title, summary, link, force_weather=force_weather)
     resp = client.models.generate_content(
         model="gemini-2.5-flash",
         contents=prompt,
@@ -159,31 +160,59 @@ def send_to_telegram(text):
 
 def main():
     posted = load_posted()
-    sent_count = 0
+    all_items = []
+    seen_links = set()
 
     for src in SOURCE_URLS:
         try:
             html_or_xml = fetch_url_text(src)
             items = parse_items(html_or_xml, src)
             print("Source:", src, "-> items:", len(items))
+            for it in items:
+                if it["link"] not in seen_links:
+                    seen_links.add(it["link"])
+                    all_items.append(it)
         except Exception as exc:
             print("Fetch failed:", src, "->", exc)
+
+    weather_sent = 0
+    for item in all_items:
+        link = item["link"]
+        if not link or link in posted or not is_weather(item["title"], item["summary"], link):
             continue
+        try:
+            msg = format_post(item["title"], item["summary"], link, force_weather=True)
+            if msg:
+                send_to_telegram(msg)
+                save_posted(link)
+                posted.add(link)
+                weather_sent += 1
+                print("Posted weather:", link)
+                break
+        except Exception as exc:
+            print("Weather post error:", link, exc)
 
-        for item in items:
-            link = item["link"]
-            if not link or link in posted:
-                continue
-            try:
-                msg = format_post(item["title"], item["summary"], link)
-                if msg:
-                    send_to_telegram(msg)
-                    save_posted(link)
-                    posted.add(link)
-                    sent_count += 1
-                    print("Posted:", link)
-            except Exception as exc:
-                print("Post error:", link, exc)
+    news_sent = 0
+    for item in all_items:
+        link = item["link"]
+        if not link or link in posted:
+            continue
+        try:
+            msg = format_post(item["title"], item["summary"], link, force_weather=False)
+            if msg:
+                send_to_telegram(msg)
+                save_posted(link)
+                posted.add(link)
+                news_sent += 1
+                print("Posted news:", link)
+        except Exception as exc:
+            print("News post error:", link, exc)
 
-            if sent_count >= 3:
-                print("Reached max posts per run (3).")
+        if news_sent >= 2:
+            break
+
+    print("Done. Weather sent:", weather_sent, "| News sent:", news_sent)
+
+
+if __name__ == "__main__":
+    main()
