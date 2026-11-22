@@ -116,4 +116,43 @@ def parse_items(content, base_url):
 
 
 def is_weather(title, summary, link):
-    text = (
+    text = (title + " " + summary + " " + link).lower()
+    return any(w in text for w in WEATHER_WORDS)
+
+
+def weather_header():
+    h1 = "**\u067e\u06cc\u0634\u200c\u0628\u06cc\u0646\u06cc \u0648\u0636\u0639 \u0647\u0648\u0627\u06cc \u0627\u06cc\u0627\u0644\u062a \u0647\u0633\u0646 (DWD)**"
+    h2 = "**\u0648\u0636\u0639\u06cc\u062a \u0641\u0639\u0644\u06cc\u060c \u0641\u0631\u062f\u0627 \u0648 \u0686\u0634\u0645\u200c\u0627\u0646\u062f\u0627\u0632 \u062f\u0648 \u0631\u0648\u0632 \u0622\u06cc\u0646\u062f\u0647:** ..."
+    h3 = "**\u062f\u0645\u0627 (\u0641\u0631\u0627\u0646\u06a9\u0641\u0648\u0631\u062a \u0648 \u0647\u0633\u0646):** ..."
+    h4 = "**\u0628\u0627\u0631\u0634 \u0648 \u0628\u0627\u062f:** ..."
+    h5 = "**\u062a\u0648\u0635\u06cc\u0647 \u0648 \u067e\u0648\u0634\u0634:** ..."
+    return "\n".join([h1, h2, h3, h4, h5])
+
+
+def build_weather_prompt(title, summary, link):
+    tpl = weather_header()
+    footer = "\n**\u0645\u0646\u0628\u0639:** DWD / " + link + "\n@HessenPersian"
+    msg = "Write a concise formal Persian weather forecast for Hessen, Germany, covering current status, tomorrow, and the next 2 days based on the source and DWD patterns without inventing fake temperatures.\n"
+    msg = msg + "Replace '...' in this template and keep the footer:\n" + tpl + footer + "\n"
+    msg = msg + "Return only the final Persian post.\nTitle: " + title + "\nSummary: " + summary
+    return msg
+
+
+def build_news_prompt(title, summary, link):
+    src_line = "\u0645\u0646\u0628\u0639: " + link
+    msg = "Write a concise, formal Persian Telegram news post with a bold headline on line 1, followed by 2 to 4 formal Persian summary sentences starting with '- ', then '" + src_line + "' and '@HessenPersian'.\n"
+    msg = msg + "Return only the final Persian post.\nTitle: " + title + "\nSummary: " + summary
+    return msg
+
+
+def format_post(title, summary, link, force_weather=False):
+    if force_weather or is_weather(title, summary, link):
+        prompt = build_weather_prompt(title, summary, link)
+    else:
+        prompt = build_news_prompt(title, summary, link)
+
+    resp = client.models.generate_content(model=GEMINI_MODEL, contents=prompt)
+    return (resp.text or "").strip()
+
+
+def send_to_telegram(text):
