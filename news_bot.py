@@ -104,6 +104,14 @@ def is_weather(title, summary, link):
 
 def build_prompt(title, summary, link):
     if is_weather(title, summary, link):
-        parts = [
-            "یک گزارش هواشناسی کوتاه، دقیق و رسمی برای کانال تلگرام بنویس که وضعیت فعلی و چشم‌انداز دست‌کم دو روز آینده ایالت هسن آلمان را پوشش دهد.",
-            "از اطلاعات زیر استفاده کن و اگر بازه دو روز آینده در متن منبع نبود، به‌طور شفاف به وضعیت گزارش‌شده و چشم‌انداز دو روز آینده بر
+        return (
+            "Write a concise, formal weather report in fluent Persian for a Telegram channel "
+            "about Hessen, Germany, covering current conditions and an outlook for at least the next 2 days "
+            "based on the source and DWD patterns without inventing fake numbers.\n"
+            "Format the response in Persian using these exact labels:\n"
+            "**پیش‌بینی وضع هوای ایالت هسن (گزارش DWD)**\n"
+            "**تاریخ و چشم‌انداز:** ...\n"
+            "**وضعیت کلی و روند دو روز آینده:** ...\n"
+            "**دما (فرانکفورت و شهرهای شاخص هسن):** ...\n"
+            "**بارش و باد:** ...\n"
+            "**پوشش و توصیه‌های کاربردی:** ...\n"
