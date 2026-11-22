@@ -1,7 +1,9 @@
 import os
 import re
+from urllib.parse import urljoin
 import feedparser
 import requests
+from bs4 import BeautifulSoup
 from google import genai
 
 TELEGRAM_BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
@@ -9,10 +11,22 @@ GEMINI_API_KEY = os.environ["GEMINI_API_KEY"]
 CHANNEL_ID = "@HessenPersian"
 POSTED_FILE = "posted.txt"
 
-RSS_FEEDS = [
+RSS_CANDIDATES = [
     "https://www.hessenschau.de/index~rss.xml",
+    "https://www.hessenschau.de/rss.xml",
+    "https://www.hessenschau.de/feed.xml",
     "https://www.fr.de/hessen/index.rss",
+    "https://www.fr.de/hessen/rss.xml",
+    "https://www.fr.de/hessen/?service=rss",
     "https://www.hessen.de/rss.xml",
+    "https://www.hessen.de/service/rss.xml",
+]
+
+HTML_SOURCES = [
+    "https://www.hessenschau.de/aktuelles/index.html",
+    "https://www.hessenschau.de/index.html",
+    "https://www.fr.de/hessen/",
+    "https://www.hessen.de/presse",
 ]
 
 HTTP_HEADERS = {
@@ -21,7 +35,7 @@ HTTP_HEADERS = {
         "AppleWebKit/537.36 (KHTML, like Gecko) "
         "Chrome/131.0.0.0 Safari/537.36"
     ),
-    "Accept": "application/rss+xml, application/xml, text/xml, */*;q=0.8",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
     "Accept-Language": "de-DE,de;q=0.9,en;q=0.8",
 }
 
@@ -79,80 +93,4 @@ def format_post_with_gemini(title, summary, link):
             "لینک: " + link + "\n\n"
             "قالب خروجی را دقیقاً به این شکل بنویس:\n"
             "📰 **عنوان خبر به فارسی**\n\n"
-            "▫️ خلاصه کوتاه و دقیق خبر در ۲ تا ۴ جمله روان و رسمی.\n\n"
-            "🔗 منبع: " + link + "\n"
-            "👉 @HessenPersian\n\n"
-            "فقط متن نهایی پست را برگردان و هیچ توضیح اضافه‌ای ننویس."
-        )
-
-    response = client.models.generate_content(
-        model="gemini-2.5-flash",
-        contents=prompt,
-    )
-    return (response.text or "").strip()
-
-
-def send_telegram_message(text):
-    url = "https://api.telegram.org/bot" + TELEGRAM_BOT_TOKEN + "/sendMessage"
-    payload = {
-        "chat_id": CHANNEL_ID,
-        "text": text,
-        "parse_mode": "Markdown",
-        "disable_web_page_preview": False,
-    }
-    resp = requests.post(url, json=payload, timeout=30)
-    if not resp.ok:
-        payload.pop("parse_mode", None)
-        resp = requests.post(url, json=payload, timeout=30)
-    resp.raise_for_status()
-
-
-def fetch_feed_entries(feed_url):
-    try:
-        resp = requests.get(feed_url, headers=HTTP_HEADERS, timeout=20)
-        print("Fetching:", feed_url, "-> HTTP", resp.status_code)
-        resp.raise_for_status()
-        parsed = feedparser.parse(resp.content)
-        entries = getattr(parsed, "entries", [])
-        print("Parsed entries for", feed_url, "->", len(entries))
-        return entries
-    except Exception as exc:
-        print("Failed fetching feed:", feed_url, "-> Error:", exc)
-        return []
-
-
-def main():
-    posted = load_posted_links()
-    new_count = 0
-
-    for feed_url in RSS_FEEDS:
-        entries = fetch_feed_entries(feed_url)
-
-        for entry in entries:
-            link = getattr(entry, "link", "").strip()
-            if not link or link in posted:
-                continue
-
-            title = getattr(entry, "title", "").strip()
-            summary = getattr(entry, "summary", "").strip()
-
-            try:
-                post_text = format_post_with_gemini(title, summary, link)
-                if post_text:
-                    send_telegram_message(post_text)
-                    save_posted_link(link)
-                    posted.add(link)
-                    new_count += 1
-                    print("Posted:", link)
-            except Exception as exc:
-                print("Error processing:", link, exc)
-
-            if new_count >= 3:
-                print("Reached max new posts per run (3). Stopping.")
-                return
-
-    print("Done. Total new posts sent:", new_count)
-
-
-if __name__ == "__main__":
-    main()
+            "▫️ خلاصه کوتاه و
