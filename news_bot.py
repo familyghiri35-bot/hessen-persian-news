@@ -1,3 +1,4 @@
+import datetime
 import json
 import os
 import re
@@ -15,28 +16,15 @@ BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
 API_KEY = os.environ["GEMINI_API_KEY"]
 CHAT_ID = "@HessenPersian"
 POSTED_FILE = "posted.txt"
-MODELS = ["gemini-3.8-flash", "gemini-2.5-flash", "gemini-2.5-flash-lite"]
+MODELS = ["gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-3.8-flash"]
 
-URLS = [
+DWD_URL = (
+    "https://www.dwd.de/DE/wetter/"
+    "wetterundklima_vorort/hessen/hessen_node.html"
+)
+NEWS_URLS = [
     "https://www.fr.de/hessen/",
     "https://www.hessen.de/presse",
-    "https://www.dwd.de/DE/wetter/wetterundklima_vorort/hessen/hessen_node.html",
-]
-
-W_KEYS = [
-    "wetter",
-    "unwetter",
-    "frost",
-    "glaette",
-    "gl\u00e4tte",
-    "schnee",
-    "regen",
-    "sturm",
-    "nebel",
-    "temperatur",
-    "dwd",
-    "hitzewelle",
-    "gewitter",
 ]
 
 BAD_PARTS = [
@@ -53,12 +41,6 @@ BAD_PARTS = [
     "youtube.com",
     "x.com",
     "twitter.com",
-    "berlin-brandenburg",
-    "mecklenburg-vorpommern",
-    "niedersachsen-bremen",
-    "rheinland-pfalz-saarland",
-    "schleswig-holstein-hamburg",
-    "bayern",
 ]
 
 W_HEADS = (
@@ -84,27 +66,27 @@ def load_posted():
     if not os.path.exists(POSTED_FILE):
         return set()
     with open(POSTED_FILE, "r", encoding="utf-8") as f:
-        return {line.strip() for line in f.read().splitlines() if line.strip()}
+        return {x.strip() for x in f.read().splitlines() if x.strip()}
 
 
-def save_posted(link):
+def save_posted(key):
     with open(POSTED_FILE, "a", encoding="utf-8") as f:
-        f.write(link + NL)
+        f.write(key + NL)
 
 
 def fetch_text(url):
-    hdrs = {"User-Agent": "Mozilla/5.0"}
-    req = Request(url, headers=hdrs)
+    req = Request(url, headers={"User-Agent": "Mozilla/5.0"})
     with urlopen(req, timeout=10) as resp:
         return resp.read().decode("utf-8", errors="ignore")
 
 
 def clean_html(raw):
-    no_tag = re.sub(r"<[^>]+>", " ", raw)
-    return " ".join(unescape(no_tag).split())
+    no_s = re.sub(r"<(script|style)\b[^>]*>.*?</\1>", " ", raw, flags=re.I | re.S)
+    no_t = re.sub(r"<[^>]+>", " ", no_s)
+    return " ".join(unescape(no_t).split())
 
 
-def parse_items(html, base):
+def parse_news(html, base):
     out = []
     seen = set()
     for m in re.finditer(r"<a\b[^>]*>(.*?)</a>", html, re.I | re.S):
@@ -117,25 +99,133 @@ def parse_items(html, base):
         low_u = u.lower().rstrip("/")
         if len(t) < 25 or not u.startswith("https://"):
             continue
-        if low_u in ["https://www.fr.de", "https://www.hessen.de", "https://www.dwd.de"]:
+        if low_u in ["https://www.fr.de", "https://www.hessen.de"]:
             continue
         if any(b in low_u for b in BAD_PARTS):
             continue
         if u not in seen:
             seen.add(u)
-            out.append({"title": t, "summary": t, "link": u})
+            out.append({"title": t, "link": u})
     return out
 
 
-def is_weather(item):
-    blob = (item["title"] + " " + item["summary"] + " " + item["link"]).lower()
-    return any(k in blob for k in W_KEYS)
+def ask_models(prompt):
+    last_err = None
+    for mod in MODELS:
+        try:
+            res = client.models.generate_content(model=mod, contents=prompt)
+            txt = (res.text or "").strip()
+            if txt:
+                log("MODEL_OK " + mod)
+                return txt
+        except Exception as e:
+            last_err = e
+            err_s = str(e)
+            log("MODEL_ERR " + mod + " -> " + err_s)
+            if "429" in err_s or "RESOURCE_EXHAUSTED" in err_s:
+                raise
+            time.sleep(3)
+    if last_err:
+        raise last_err
+    return ""
 
 
-def make_prompt(item, force_weather=False):
-    t = item["title"]
-    s = item["summary"]
-    u = item["link"]
-    if force_weather or is_weather(item):
-        parts = [
-            "Write a concise formal Persian weather forecast for Hessen,
+def send_tg(text):
+    url = "https://api.telegram.org/bot" + BOT_TOKEN + "/sendMessage"
+    data = {"chat_id": CHAT_ID, "text": text, "disable_web_page_preview": False}
+    raw = json.dumps(data).encode("utf-8")
+    req = Request(
+        url,
+        data=raw,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    with urlopen(req, timeout=15) as resp:
+        resp.read()
+
+
+def run_weather(posted, quota_hit):
+    today_key = "weather:" + datetime.date.today().isoformat()
+    if quota_hit or today_key in posted:
+        return 0, quota_hit
+    try:
+        plain = clean_html(fetch_text(DWD_URL))[:4500]
+        p1 = "Write a concise formal Persian weather forecast for Hessen."
+        p2 = "Base it strictly on the DWD text below without fake temps."
+        p3 = "Cover current weather, tomorrow, and next 2 days."
+        p4 = "Use bold headings for: " + W_HEADS
+        p5 = "End with: " + SRC_WORD + " DWD / " + DWD_URL + " and @HessenPersian."
+        p6 = "Return only Persian text. DWD_TEXT: " + plain
+        txt = ask_models(NL.join([p1, p2, p3, p4, p5, p6]))
+        if txt:
+            send_tg(txt)
+            save_posted(today_key)
+            posted.add(today_key)
+            return 1, False
+    except Exception as e:
+        err_s = str(e)
+        log("W_ERR -> " + err_s)
+        if "429" in err_s or "RESOURCE_EXHAUSTED" in err_s:
+            return 0, True
+    return 0, False
+
+
+def main():
+    t0 = time.time()
+    posted = load_posted()
+    quota_hit = False
+    w_done, quota_hit = run_weather(posted, quota_hit)
+
+    items = []
+    seen = set()
+    for src in NEWS_URLS:
+        if quota_hit or time.time() - t0 > 45:
+            break
+        try:
+            got = parse_news(fetch_text(src), src)
+            log("OK " + src + " -> " + str(len(got)))
+            for it in got:
+                if it["link"] not in seen:
+                    seen.add(it["link"])
+                    items.append(it)
+        except Exception as e:
+            log("ERR " + src + " -> " + str(e))
+
+    n_done = 0
+    for it in items:
+        if quota_hit or n_done >= 1 or time.time() - t0 > 75:
+            break
+        u = it["link"]
+        if not u or u in posted:
+            continue
+        try:
+            log("News: " + u)
+            n1 = "Write a concise formal Persian Telegram news post."
+            n2 = "Line 1: bold headline. Then 2 to 4 bullets starting with - ."
+            n3 = "End with: " + SRC_WORD + " " + u + " and @HessenPersian."
+            n4 = "Return only Persian text. Title: " + it["title"]
+            txt = ask_models(NL.join([n1, n2, n3, n4]))
+            if txt:
+                send_tg(txt)
+                save_posted(u)
+                posted.add(u)
+                n_done += 1
+        except Exception as e:
+            err_s = str(e)
+            log("N_ERR " + u + " -> " + err_s)
+            if "429" in err_s or "RESOURCE_EXHAUSTED" in err_s:
+                quota_hit = True
+            break
+
+    log(
+        "DONE weather="
+        + str(w_done)
+        + " news="
+        + str(n_done)
+        + " quota_hit="
+        + str(quota_hit)
+    )
+
+
+if __name__ == "__main__":
+    main()
