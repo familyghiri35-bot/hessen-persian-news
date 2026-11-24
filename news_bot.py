@@ -12,6 +12,7 @@ from google import genai
 socket.setdefaulttimeout(12)
 
 NL = chr(10)
+ARR = " " + chr(45) + chr(62) + " "
 BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
 API_KEY = os.environ["GEMINI_API_KEY"]
 CHAT_ID = "@HessenPersian"
@@ -121,7 +122,7 @@ def ask_models(prompt):
         except Exception as e:
             last_err = e
             err_s = str(e)
-            log("MODEL_ERR " + mod + " -> " + err_s)
+            log("MODEL_ERR " + mod + ARR + err_s)
             if "429" in err_s or "RESOURCE_EXHAUSTED" in err_s:
                 raise
             time.sleep(3)
@@ -164,7 +165,7 @@ def run_weather(posted, quota_hit):
             return 1, False
     except Exception as e:
         err_s = str(e)
-        log("W_ERR -> " + err_s)
+        log("W_ERR" + ARR + err_s)
         if "429" in err_s or "RESOURCE_EXHAUSTED" in err_s:
             return 0, True
     return 0, False
@@ -183,10 +184,49 @@ def main():
             break
         try:
             got = parse_news(fetch_text(src), src)
-            log("OK " + src + " -> " + str(len(got)))
+            log("OK " + src + ARR + str(len(got)))
             for it in got:
                 if it["link"] not in seen:
                     seen.add(it["link"])
                     items.append(it)
         except Exception as e:
-            log("ERR " + src + "
+            log("ERR " + src + ARR + str(e))
+
+    n_done = 0
+    for it in items:
+        if quota_hit or n_done >= 1 or time.time() - t0 > 75:
+            break
+        u = it["link"]
+        if not u or u in posted:
+            continue
+        try:
+            log("News: " + u)
+            n1 = "Write a concise formal Persian Telegram news post."
+            n2 = "Line 1: bold headline. Then 2 to 4 bullets starting with - ."
+            n3 = "End with: " + SRC_WORD + " " + u + " and @HessenPersian."
+            n4 = "Return only Persian text. Title: " + it["title"]
+            txt = ask_models(NL.join([n1, n2, n3, n4]))
+            if txt:
+                send_tg(txt)
+                save_posted(u)
+                posted.add(u)
+                n_done += 1
+        except Exception as e:
+            err_s = str(e)
+            log("N_ERR " + u + ARR + err_s)
+            if "429" in err_s or "RESOURCE_EXHAUSTED" in err_s:
+                quota_hit = True
+            break
+
+    log(
+        "DONE weather="
+        + str(w_done)
+        + " news="
+        + str(n_done)
+        + " quota_hit="
+        + str(quota_hit)
+    )
+
+
+if __name__ == "__main__":
+    main()
