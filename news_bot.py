@@ -15,7 +15,7 @@ BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
 API_KEY = os.environ["GEMINI_API_KEY"]
 CHAT_ID = "@HessenPersian"
 POSTED_FILE = "posted.txt"
-MODEL_NAME = "gemini-3.8-flash"
+MODELS = ["gemini-3.8-flash", "gemini-2.5-flash", "gemini-2.5-flash-lite"]
 
 URLS = [
     "https://www.fr.de/hessen/",
@@ -114,8 +114,10 @@ def parse_items(html, base):
             continue
         t = clean_html(m.group(1))
         u = urljoin(base, hm.group(1).strip())
-        low_u = u.lower()
+        low_u = u.lower().rstrip("/")
         if len(t) < 25 or not u.startswith("https://"):
+            continue
+        if low_u in ["https://www.fr.de", "https://www.hessen.de", "https://www.dwd.de"]:
             continue
         if any(b in low_u for b in BAD_PARTS):
             continue
@@ -136,105 +138,4 @@ def make_prompt(item, force_weather=False):
     u = item["link"]
     if force_weather or is_weather(item):
         parts = [
-            "Write a concise formal Persian weather forecast for Hessen, Germany.",
-            "Include current status, tomorrow, and next 2 days based on DWD without fake temperatures.",
-            "Use bold headings for: " + W_HEADS,
-            "End with: " + SRC_WORD + " DWD / " + u + " and @HessenPersian.",
-            "Return only Persian text. Title: " + t + " | Summary: " + s,
-        ]
-        return NL.join(parts)
-    parts = [
-        "Write a concise formal Persian Telegram news post.",
-        "Line 1: bold headline. Next: 2 to 4 formal Persian bullet sentences starting with - .",
-        "End with: " + SRC_WORD + " " + u + " and @HessenPersian.",
-        "Return only Persian text. Title: " + t + " | Summary: " + s,
-    ]
-    return NL.join(parts)
-
-
-def gen_post(item, force_weather=False):
-    prompt = make_prompt(item, force_weather=force_weather)
-    res = client.models.generate_content(model=MODEL_NAME, contents=prompt)
-    return (res.text or "").strip()
-
-
-def send_tg(text):
-    url = "https://api.telegram.org/bot" + BOT_TOKEN + "/sendMessage"
-    data = {"chat_id": CHAT_ID, "text": text, "disable_web_page_preview": False}
-    raw = json.dumps(data).encode("utf-8")
-    req = Request(url, data=raw, headers={"Content-Type": "application/json"}, method="POST")
-    with urlopen(req, timeout=15) as resp:
-        resp.read()
-
-
-def main():
-    t0 = time.time()
-    posted = load_posted()
-    items = []
-    seen = set()
-
-    for src in URLS:
-        if time.time() - t0 > 35:
-            break
-        try:
-            got = parse_items(fetch_text(src), src)
-            log("OK " + src + " -> " + str(len(got)))
-            for it in got:
-                if it["link"] not in seen:
-                    seen.add(it["link"])
-                    items.append(it)
-        except Exception as e:
-            log("ERR " + src + " -> " + str(e))
-
-    quota_hit = False
-    w_done = 0
-    w_tries = 0
-    for it in items:
-        if quota_hit or w_tries >= 1 or time.time() - t0 > 60:
-            break
-        u = it["link"]
-        if not u or u in posted or not is_weather(it):
-            continue
-        w_tries += 1
-        try:
-            log("Weather: " + u)
-            txt = gen_post(it, force_weather=True)
-            if txt:
-                send_tg(txt)
-                save_posted(u)
-                posted.add(u)
-                w_done += 1
-        except Exception as e:
-            err_s = str(e)
-            log("W_ERR " + u + " -> " + err_s)
-            if "429" in err_s or "RESOURCE_EXHAUSTED" in err_s:
-                quota_hit = True
-
-    n_done = 0
-    n_tries = 0
-    for it in items:
-        if quota_hit or n_tries >= 1 or n_done >= 1 or time.time() - t0 > 60:
-            break
-        u = it["link"]
-        if not u or u in posted:
-            continue
-        n_tries += 1
-        try:
-            log("News: " + u)
-            txt = gen_post(it, force_weather=False)
-            if txt:
-                send_tg(txt)
-                save_posted(u)
-                posted.add(u)
-                n_done += 1
-        except Exception as e:
-            err_s = str(e)
-            log("N_ERR " + u + " -> " + err_s)
-            if "429" in err_s or "RESOURCE_EXHAUSTED" in err_s:
-                quota_hit = True
-
-    log("DONE weather=" + str(w_done) + " news=" + str(n_done) + " quota_hit=" + str(quota_hit))
-
-
-if __name__ == "__main__":
-    main()
+            "Write a concise formal Persian weather forecast for Hessen,
