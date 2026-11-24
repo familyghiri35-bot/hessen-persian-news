@@ -16,7 +16,7 @@ BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
 API_KEY = os.environ["GEMINI_API_KEY"]
 CHAT_ID = "@HessenPersian"
 POSTED_FILE = "posted.txt"
-MODELS = ["gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-3.8-flash"]
+MODELS = ["gemini-3.5-flash-lite", "gemini-3.8-flash"]
 
 DWD_URL = (
     "https://www.dwd.de/DE/wetter/"
@@ -189,43 +189,4 @@ def main():
                     seen.add(it["link"])
                     items.append(it)
         except Exception as e:
-            log("ERR " + src + " -> " + str(e))
-
-    n_done = 0
-    for it in items:
-        if quota_hit or n_done >= 1 or time.time() - t0 > 75:
-            break
-        u = it["link"]
-        if not u or u in posted:
-            continue
-        try:
-            log("News: " + u)
-            n1 = "Write a concise formal Persian Telegram news post."
-            n2 = "Line 1: bold headline. Then 2 to 4 bullets starting with - ."
-            n3 = "End with: " + SRC_WORD + " " + u + " and @HessenPersian."
-            n4 = "Return only Persian text. Title: " + it["title"]
-            txt = ask_models(NL.join([n1, n2, n3, n4]))
-            if txt:
-                send_tg(txt)
-                save_posted(u)
-                posted.add(u)
-                n_done += 1
-        except Exception as e:
-            err_s = str(e)
-            log("N_ERR " + u + " -> " + err_s)
-            if "429" in err_s or "RESOURCE_EXHAUSTED" in err_s:
-                quota_hit = True
-            break
-
-    log(
-        "DONE weather="
-        + str(w_done)
-        + " news="
-        + str(n_done)
-        + " quota_hit="
-        + str(quota_hit)
-    )
-
-
-if __name__ == "__main__":
-    main()
+            log("ERR " + src + "
